@@ -68,6 +68,9 @@ class User(SqlAlchemyBase, BaseMixins):
     )
     household: Mapped[Household] = orm.relationship("Household", back_populates="users")
 
+    locale: Mapped[str | None] = mapped_column(String, default=None)
+    """The language the user picked, so it follows them to other browsers. `None` keeps the browser's own choice."""
+
     cache_key: Mapped[str | None] = mapped_column(String, default="1234")
     # Digest of the OIDC picture claim the stored avatar was built from, so repeat logins
     # don't re-download an image that hasn't changed.
