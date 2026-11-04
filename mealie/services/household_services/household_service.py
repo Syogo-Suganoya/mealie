@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import UUID4
@@ -10,6 +11,8 @@ from mealie.schema.household.household import HouseholdRecipeCreate, HouseholdRe
 from mealie.schema.household.household_preferences import CreateHouseholdPreferences, SaveHouseholdPreferences
 from mealie.schema.household.household_statistics import HouseholdStatistics
 from mealie.schema.recipe.recipe import Recipe
+from mealie.schema.recipe.recipe_timeline_events import TimelineEventType
+from mealie.schema.response.pagination import OrderDirection, PaginationQuery
 from mealie.services._base_service import BaseService
 
 
@@ -97,3 +100,32 @@ class HouseholdService(BaseService):
             household_recipe_out = self.repos.household_recipes.create(create_data)
 
         return household_recipe_out.cast(HouseholdRecipeSummary)
+
+    def revert_last_made(self, recipe_slug: str | UUID, deleted_event_time: datetime) -> None:
+        """
+        Moves the household's last made date back to its latest remaining "made" event (system events, such as
+        "recipe created", don't count) after a timeline event is deleted. Does nothing if the deleted event was
+        older than the last made date, e.g. it was an older entry or the date was set later by hand.
+        """
+        recipe = self._get_recipe(recipe_slug)
+        if not recipe:
+            return
+
+        household_recipe = self.repos.household_recipes.get_by_recipe(recipe.id)
+        if not (household_recipe and household_recipe.last_made) or household_recipe.last_made > deleted_event_time:
+            return
+
+        query = PaginationQuery(
+            page=1,
+            per_page=1,
+            order_by="timestamp",
+            order_direction=OrderDirection.desc,
+            query_filter=(
+                f'recipe_id = "{recipe.id}" '
+                f'AND event_type <> "{TimelineEventType.system.value}" '
+                f'AND user.household_id = "{self.household_id}"'
+            ),
+        )
+        events = self.repos.recipe_timeline_events.page_all(pagination=query)
+        last_made = events.items[0].timestamp if events.items else None
+        self.set_household_recipe(recipe.id, HouseholdRecipeUpdate(last_made=last_made))

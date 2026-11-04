@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import UUID4
 
 from mealie.lang.providers import get_all_translations
 from mealie.schema.recipe.recipe import Recipe
@@ -565,3 +566,88 @@ def test_admin_can_modify_and_delete_other_users_timeline_event(
     assert response.json()["subject"] == new_subject
 
     assert api_client.delete(item_url, headers=unique_admin.token).status_code == 200
+
+
+def _mark_as_made(api_client: TestClient, user: TestUser, recipe: Recipe, timestamp: datetime) -> UUID4:
+    """Does what "I Made This" does: posts a timeline event and sets the last made date to its timestamp"""
+    response = api_client.post(
+        api_routes.recipes_timeline_events,
+        json={
+            "recipe_id": str(recipe.id),
+            "subject": random_string(),
+            "event_type": TimelineEventType.comment.value,
+            "timestamp": timestamp.isoformat(),
+        },
+        headers=user.token,
+    )
+    assert response.status_code == 201
+    event_id = RecipeTimelineEventOut.model_validate(response.json()).id
+
+    response = api_client.patch(
+        api_routes.recipes_slug_last_made(recipe.slug), json={"timestamp": timestamp.isoformat()}, headers=user.token
+    )
+    assert response.status_code == 200
+    return event_id
+
+
+def _get_last_made(api_client: TestClient, user: TestUser, recipe: Recipe) -> datetime | None:
+    response = api_client.get(api_routes.households_self_recipes_recipe_slug(recipe.slug), headers=user.token)
+    assert response.status_code == 200
+    last_made = response.json()["lastMade"]
+    return datetime.fromisoformat(last_made) if last_made else None
+
+
+@pytest.mark.parametrize("use_other_household_user", [True, False])
+def test_delete_timeline_event_reverts_last_made(
+    api_client: TestClient,
+    unique_user: TestUser,
+    h2_user: TestUser,
+    recipes: list[Recipe],
+    use_other_household_user: bool,
+):
+    user = h2_user if use_other_household_user else unique_user
+    recipe = recipes[0]
+    first_made = datetime(2026, 1, 1, 18, 0, tzinfo=UTC)
+    last_made = datetime(2026, 1, 8, 18, 0, tzinfo=UTC)
+    first_event_id = _mark_as_made(api_client, user, recipe, first_made)
+    last_event_id = _mark_as_made(api_client, user, recipe, last_made)
+    assert _get_last_made(api_client, user, recipe) == last_made
+
+    # deleting the latest entry moves the date back to the previous one
+    response = api_client.delete(api_routes.recipes_timeline_events_item_id(last_event_id), headers=user.token)
+    assert response.status_code == 200
+    assert _get_last_made(api_client, user, recipe) == first_made
+
+    # deleting the only remaining entry clears it; the "recipe created" system event doesn't count
+    response = api_client.delete(api_routes.recipes_timeline_events_item_id(first_event_id), headers=user.token)
+    assert response.status_code == 200
+    assert _get_last_made(api_client, user, recipe) is None
+
+
+def test_delete_older_timeline_event_keeps_last_made(
+    api_client: TestClient, unique_user: TestUser, recipes: list[Recipe]
+):
+    recipe = recipes[0]
+    first_made = datetime(2026, 1, 1, 18, 0, tzinfo=UTC)
+    last_made = datetime(2026, 1, 8, 18, 0, tzinfo=UTC)
+    first_event_id = _mark_as_made(api_client, unique_user, recipe, first_made)
+    _mark_as_made(api_client, unique_user, recipe, last_made)
+
+    response = api_client.delete(api_routes.recipes_timeline_events_item_id(first_event_id), headers=unique_user.token)
+    assert response.status_code == 200
+    assert _get_last_made(api_client, unique_user, recipe) == last_made
+
+
+def test_delete_timeline_event_ignores_other_households(
+    api_client: TestClient, unique_user: TestUser, h2_user: TestUser, recipes: list[Recipe]
+):
+    """Another household's entries don't count towards this household's last made date"""
+    recipe = recipes[0]
+    other_household_made = datetime(2026, 1, 1, 18, 0, tzinfo=UTC)
+    _mark_as_made(api_client, h2_user, recipe, other_household_made)
+    event_id = _mark_as_made(api_client, unique_user, recipe, datetime(2026, 1, 8, 18, 0, tzinfo=UTC))
+
+    response = api_client.delete(api_routes.recipes_timeline_events_item_id(event_id), headers=unique_user.token)
+    assert response.status_code == 200
+    assert _get_last_made(api_client, unique_user, recipe) is None
+    assert _get_last_made(api_client, h2_user, recipe) == other_household_made
