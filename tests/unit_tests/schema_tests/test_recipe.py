@@ -172,3 +172,28 @@ def test_recipe_preserves_existing_slug():
     )
 
     assert recipe.slug == "nourish-bowls-zuppa-copycat"
+
+
+@pytest.mark.parametrize(
+    ["data", "expected"],
+    [
+        # the recipe editor and the scrapers set perform_time; cook_time mirrors it
+        ({"perform_time": "20"}, "20"),
+        # API clients using the schema.org name still set the cook time
+        ({"cook_time": "20"}, "20"),
+        # perform_time wins, so a stale cook_time sent back by a client can't override an edit...
+        ({"cook_time": "10", "perform_time": "20"}, "20"),
+        # ...or bring back a cook time that was cleared
+        ({"cook_time": "10", "perform_time": None}, None),
+        ({}, None),
+    ],
+)
+def test_recipe_cook_time_mirrors_perform_time(data: dict[str, Any], expected: str | None):
+    recipe = RecipeSummary(id=uuid4(), user_id=uuid4(), household_id=uuid4(), group_id=uuid4(), **data)
+
+    assert recipe.perform_time == expected
+    assert recipe.cook_time == expected
+
+    dumped = recipe.model_dump(by_alias=True)
+    assert dumped["performTime"] == expected
+    assert dumped["cookTime"] == expected
