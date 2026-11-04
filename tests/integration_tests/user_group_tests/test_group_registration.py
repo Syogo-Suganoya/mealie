@@ -24,6 +24,23 @@ def test_user_registration_new_group(api_client: TestClient):
     assert token is not None
 
 
+def test_user_registration_saves_locale(api_client: TestClient):
+    registration = user_registration_factory()
+    registration.locale = "fr-FR"
+
+    response = api_client.post(api_routes.users_register, json=registration.model_dump(by_alias=True))
+    assert response.status_code == 201
+
+    form_data = {"username": registration.email, "password": registration.password}
+    response = api_client.post(api_routes.auth_token, data=form_data)
+    assert response.status_code == 200
+
+    headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+    response = api_client.get(api_routes.users_self, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["locale"] == "fr-FR"
+
+
 def test_new_user_group_permissions(api_client: TestClient):
     registration = user_registration_factory()
 

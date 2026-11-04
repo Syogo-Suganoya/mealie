@@ -65,7 +65,9 @@ class UserController(BaseUserController):
         assert_user_change_allowed(item_id, self.user, new_data)
 
         try:
-            self.repos.users.update(item_id, new_data.model_dump())
+            # clients that don't send the locale (e.g. the profile page) shouldn't clear it
+            exclude = set() if "locale" in new_data.model_fields_set else {"locale"}
+            self.repos.users.update(item_id, new_data.model_dump(exclude=exclude))
         except Exception as e:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
