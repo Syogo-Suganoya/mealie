@@ -3,10 +3,10 @@ from __future__ import annotations
 import datetime
 from numbers import Number
 from pathlib import Path
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, Any, ClassVar, Self
 from uuid import uuid4
 
-from pydantic import UUID4, BaseModel, ConfigDict, Field, field_validator
+from pydantic import UUID4, BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_core.core_schema import ValidationInfo
 from slugify import slugify
 from sqlalchemy import Select, desc, func, or_, select, text, union
@@ -219,6 +219,20 @@ class RecipeSummary(MealieModel):
             return str(val)
 
         return val
+
+    @model_validator(mode="after")
+    def sync_cook_time(self) -> Self:
+        """
+        Mealie stores the cook time in `perform_time`; `cook_time` is the schema.org name, kept so it is
+        never out of date in the API and in exports. `cook_time` only fills in `perform_time` when the
+        input has no `perform_time` at all, so a stale `cook_time` can't bring back a cleared cook time.
+        """
+        if "perform_time" in self.model_fields_set or self.perform_time is not None:
+            self.cook_time = self.perform_time
+        elif self.cook_time is not None:
+            self.perform_time = self.cook_time
+
+        return self
 
     @property
     def recipe_yield_display(self) -> str:
