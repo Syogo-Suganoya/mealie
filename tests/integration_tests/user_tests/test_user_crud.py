@@ -87,6 +87,34 @@ def test_user_update(api_client: TestClient, unique_user: TestUser, admin_user: 
     assert response.status_code == 403
 
 
+def test_user_update_locale(api_client: TestClient, unique_user: TestUser):
+    user = api_client.get(api_routes.users_self, headers=unique_user.token).json()
+    user["locale"] = "fr-FR"
+    response = api_client.put(api_routes.users_item_id(unique_user.user_id), json=user, headers=unique_user.token)
+    assert response.status_code == 200
+    assert api_client.get(api_routes.users_self, headers=unique_user.token).json()["locale"] == "fr-FR"
+
+    # an update that doesn't mention the locale (e.g. from the profile page) keeps it
+    user.pop("locale")
+    user["fullName"] = random_string()
+    response = api_client.put(api_routes.users_item_id(unique_user.user_id), json=user, headers=unique_user.token)
+    assert response.status_code == 200
+    assert api_client.get(api_routes.users_self, headers=unique_user.token).json()["locale"] == "fr-FR"
+
+    # an explicit null clears it
+    user["locale"] = None
+    response = api_client.put(api_routes.users_item_id(unique_user.user_id), json=user, headers=unique_user.token)
+    assert response.status_code == 200
+    assert api_client.get(api_routes.users_self, headers=unique_user.token).json()["locale"] is None
+
+
+def test_user_update_invalid_locale(api_client: TestClient, unique_user: TestUser):
+    user = api_client.get(api_routes.users_self, headers=unique_user.token).json()
+    user["locale"] = "invalid"
+    response = api_client.put(api_routes.users_item_id(unique_user.user_id), json=user, headers=unique_user.token)
+    assert response.status_code == 422
+
+
 def test_admin_updates(api_client: TestClient, admin_user: TestUser, unique_user: TestUser):
     response = api_client.get(api_routes.admin_users_item_id(unique_user.user_id), headers=admin_user.token)
     assert response.status_code == 200

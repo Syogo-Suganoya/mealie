@@ -48,7 +48,7 @@ export function resetAuth() {
 }
 
 export const useAuthBackend = function (): AuthState {
-  const { $axios } = useNuxtApp();
+  const { $axios, $i18n } = useNuxtApp();
   const router = useRouter();
 
   const runtimeConfig = useRuntimeConfig();
@@ -127,6 +127,11 @@ export const useAuthBackend = function (): AuthState {
       const { data } = await $axios.get<UserOut>("/api/users/self");
       authUser.value = data;
       authStatus.value = "authenticated";
+
+      // the locale saved on the user wins over this browser's, so it follows them everywhere
+      if (data.locale && data.locale !== $i18n.locale.value) {
+        await $i18n.setLocale(data.locale as typeof $i18n.locale.value);
+      }
     }
     catch (error: any) {
       console.error("Failed to fetch user session:", error);
