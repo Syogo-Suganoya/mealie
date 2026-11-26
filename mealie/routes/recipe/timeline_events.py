@@ -23,6 +23,7 @@ from mealie.schema.recipe.request_helpers import UpdateImageResponse
 from mealie.schema.response.pagination import PaginationQuery
 from mealie.services import urls
 from mealie.services.event_bus_service.event_types import EventOperation, EventRecipeTimelineEventData, EventTypes
+from mealie.services.household_services.household_service import HouseholdService
 from mealie.services.recipe.recipe_data_service import RecipeDataService
 
 router = UserAPIRouter(route_class=MealieCrudRoute, prefix="/timeline/events")
@@ -51,6 +52,19 @@ class RecipeTimelineEventsController(BaseCrudController):
         if event.user_id != self.user.id and not self.user.admin:
             raise forbidden("Timeline event does not belong to user")
         return event
+
+    def _revert_last_made(self, recipe_id: UUID4, deleted_event: RecipeTimelineEventOut) -> None:
+        # the last made date belongs to the household of whoever made the recipe, which is not
+        # necessarily the current user's (e.g. an admin deleting someone else's event)
+        author = get_repositories(self.session, group_id=self.group_id, household_id=None).users.get_one(
+            deleted_event.user_id
+        )
+        if not author:
+            return
+
+        household_repos = get_repositories(self.session, group_id=self.group_id, household_id=author.household_id)
+        household_service = HouseholdService(self.group_id, author.household_id, household_repos)
+        household_service.revert_last_made(recipe_id, deleted_event.timestamp)
 
     def _translate_event_subject(self, event: RecipeTimelineEventOut) -> None:
         """Translate auto-generated event subjects into the request's locale.
@@ -155,6 +169,9 @@ class RecipeTimelineEventsController(BaseCrudController):
 
         recipe = self.group_recipes.get_one(event.recipe_id, "id")
         if recipe:
+            if event.event_type != TimelineEventType.system.value:
+                self._revert_last_made(recipe.id, event)
+
             self.publish_event(
                 event_type=EventTypes.recipe_updated,
                 document_data=EventRecipeTimelineEventData(
