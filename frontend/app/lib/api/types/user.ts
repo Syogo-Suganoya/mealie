@@ -141,6 +141,7 @@ export interface PrivateUser {
   group: string;
   household: string;
   advanced: boolean;
+  locale: string | null;
   showAnnouncements: boolean;
   lastReadAnnouncement: string | null;
   canInvite: boolean;
@@ -214,6 +215,7 @@ export interface UserBase {
   group?: string | null;
   household?: string | null;
   advanced?: boolean;
+  locale?: string | null;
   showAnnouncements?: boolean;
   lastReadAnnouncement?: string | null;
   canInvite?: boolean;
@@ -231,6 +233,7 @@ export interface UserIn {
   group?: string | null;
   household?: string | null;
   advanced?: boolean;
+  locale?: string | null;
   showAnnouncements?: boolean;
   lastReadAnnouncement?: string | null;
   canInvite?: boolean;
@@ -249,6 +252,7 @@ export interface UserOut {
   group: string;
   household: string;
   advanced: boolean;
+  locale: string | null;
   showAnnouncements: boolean;
   lastReadAnnouncement: string | null;
   canInvite: boolean;

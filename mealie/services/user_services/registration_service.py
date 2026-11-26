@@ -35,6 +35,7 @@ class RegistrationService:
             password=hash_password(self.registration.password),
             full_name=self.registration.full_name,
             advanced=self.registration.advanced,
+            locale=self.registration.locale,
             group=group,
             household=household,
             can_invite=new_group,
